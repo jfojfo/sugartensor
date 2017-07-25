@@ -110,19 +110,19 @@ disc_fake, cat_fake, con_fake = discriminator(gen)
 #
 
 # discriminator loss
-loss_d_r = disc_real.sg_bce(target=y_real, name='disc_real')
-loss_d_f = disc_fake.sg_bce(target=y_fake, name='disc_fake')
+loss_d_r = tf.reduce_mean(disc_real.sg_bce(target=y_real, name='disc_real'))
+loss_d_f = tf.reduce_mean(disc_fake.sg_bce(target=y_fake, name='disc_fake'))
 loss_d = (loss_d_r + loss_d_f) / 2
 
 
 # generator loss
-loss_g = disc_fake.sg_bce(target=y_real, name='gen')
+loss_g = tf.reduce_mean(disc_fake.sg_bce(target=y_real, name='gen'))
 
 # categorical factor loss
-loss_c = cat_fake.sg_ce(target=z_cat, name='cat')
+loss_c = tf.reduce_mean(cat_fake.sg_ce(target=z_cat, name='cat'))
 
 # continuous factor loss
-loss_con = con_fake.sg_mse(target=z_con, name='con').sg_mean(axis=1)
+loss_con = tf.reduce_mean(con_fake.sg_mse(target=z_con, name='con').sg_mean(axis=1))
 
 
 #

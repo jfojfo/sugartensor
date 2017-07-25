@@ -1,7 +1,10 @@
 import sugartensor as tf
 import numpy as np
-import matplotlib.pyplot as plt
 
+import matplotlib
+matplotlib.use('Agg')
+
+import matplotlib.pyplot as plt
 
 __author__ = 'namju.kim@kakaobrain.com'
 
@@ -56,7 +59,7 @@ z = (tf.ones(batch_size, dtype=tf.sg_intx) * target_num).sg_one_hot(depth=cat_di
 z = z.sg_concat(target=[target_cval_1.sg_expand_dims(), target_cval_2.sg_expand_dims()])
 
 # random seed = categorical variable + continuous variable + random normal
-z = z.sg_concat(target=tf.random_normal((batch_size, rand_dim)))
+z = z.sg_concat(target=tf.random_uniform((batch_size, rand_dim)))
 
 # generator
 gen = generator(z).sg_squeeze()
