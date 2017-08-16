@@ -264,52 +264,92 @@ def sg_layer_func(func):
         with tf.variable_scope(opt.name, reuse=opt.reuse) as scope:
 
             # call layer function
+            opt += tf.sg_opt(init='he_uniform', init_scale=1.0)
             out = func(tensor, opt)
             out_shape = out.get_shape()
 
             # apply batch normalization
+            # if opt.bn:
+            #     beta = init.constant('beta', opt.dim, summary=opt.summary)
+            #     gamma = init.constant('gamma', opt.dim, value=1, summary=opt.summary, trainable=opt.scale)
+            #
+            #     # offset, scale parameter ( for inference )
+            #     mean_running = init.constant('mean', opt.dim, trainable=False, summary=opt.summary)
+            #     variance_running = init.constant('variance', opt.dim, value=1, trainable=False, summary=opt.summary)
+            #
+            #     # use fused batch norm if ndims in [2, 3, 4]
+            #     if out_shape.ndims in [2, 3, 4]:
+            #         # add HW dims if necessary, fused_batch_norm requires shape to be NHWC
+            #         if out_shape.ndims == 2:
+            #             out = tf.expand_dims(out, axis=1)
+            #             out = tf.expand_dims(out, axis=2)
+            #         elif out_shape.ndims == 3:
+            #             out = tf.expand_dims(out, axis=2)
+            #
+            #         fused_eps = tf.sg_eps if tf.sg_eps > 1e-5 else 1e-5
+            #         # by jfo
+            #         out, mean, variance = tf.cond(
+            #             tf.logical_and(_phase, opt.bn_is_training),
+            #             lambda: tf.nn.fused_batch_norm(out, gamma, beta, epsilon=fused_eps),
+            #             lambda: tf.nn.fused_batch_norm(out, gamma, beta, mean=mean_running, variance=variance_running, epsilon=fused_eps, is_training=False)
+            #         )
+            #         # end
+            #
+            #         # restore original shape if HW dims was added
+            #         if out_shape.ndims == 2:
+            #             out = tf.squeeze(out, axis=[1, 2])
+            #         elif out_shape.ndims == 3:
+            #             out = tf.squeeze(out, axis=2)
+            #
+            #     # fallback to naive batch norm
+            #     else:
+            #         mean, variance = tf.nn.moments(out, axes=list(range(len(out.get_shape()) - 1)))
+            #         # by jfo
+            #         out = tf.cond(
+            #             tf.logical_and(_phase, opt.bn_is_training),
+            #             lambda: tf.nn.batch_normalization(out, mean, variance, beta, gamma, tf.sg_eps),
+            #             lambda: tf.nn.batch_normalization(out, mean_running, variance_running, beta, gamma, tf.sg_eps)
+            #         )
+            #     # end
+            #
+            #     # by jfo
+            #     #decay = 0.99
+            #     decay = opt.bn_decay or 0.99
+            #     if opt.bn_is_training:
+            #     # end
+            #         tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, mean_running.assign(mean_running * decay + mean * (1 - decay)))
+            #         tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, variance_running.assign(variance_running * decay + variance * (1 - decay)))
+
+            # by jfo
             if opt.bn:
-                beta = init.constant('beta', opt.dim, summary=opt.summary)
-                gamma = init.constant('gamma', opt.dim, value=1, summary=opt.summary, trainable=opt.scale)
+                opt += tf.sg_opt(bn_is_training=True, bn_decay=0.999, bn_center=True, bn_scale=False, bn_epsilon=0.001,
+                                 bn_fused=False, bn_scope='BatchNorm')
+                if 'bn_updates_collections' not in opt:
+                    opt.bn_updates_collections = tf.GraphKeys.UPDATE_OPS
+                out = tf.contrib.layers.batch_norm(out,
+                                                   is_training=opt.bn_is_training,
+                                                   decay=opt.bn_decay,
+                                                   center=opt.bn_center,
+                                                   scale=opt.bn_scale,
+                                                   epsilon=opt.bn_epsilon,
+                                                   fused=opt.bn_fused,
+                                                   scope=opt.bn_scope,
+                                                   updates_collections=opt.bn_updates_collections
+                                                   )
+                if opt.summary:
+                    var_beta = var_gamma = var_moving_mean = var_moving_variance = None
+                    with tf.variable_scope(opt.bn_scope, reuse=True):
+                        if opt.bn_center:
+                            var_beta = tf.get_variable('beta')
+                        if opt.bn_scale:
+                            var_gamma = tf.get_variable('gamma')
+                        if opt.bn_is_training:
+                            var_moving_mean = tf.get_variable('moving_mean')
+                            var_moving_variance = tf.get_variable('moving_variance')
+                    [tf.sg_summary_param(var) for var in [var_beta, var_gamma, var_moving_mean, var_moving_variance]
+                     if var is not None]
 
-                # offset, scale parameter ( for inference )
-                mean_running = init.constant('mean', opt.dim, trainable=False, summary=opt.summary)
-                variance_running = init.constant('variance', opt.dim, value=1, trainable=False, summary=opt.summary)
-
-                # use fused batch norm if ndims in [2, 3, 4]
-                if out_shape.ndims in [2, 3, 4]:
-                    # add HW dims if necessary, fused_batch_norm requires shape to be NHWC
-                    if out_shape.ndims == 2:
-                        out = tf.expand_dims(out, axis=1)
-                        out = tf.expand_dims(out, axis=2)
-                    elif out_shape.ndims == 3:
-                        out = tf.expand_dims(out, axis=2)
-
-                    fused_eps = tf.sg_eps if tf.sg_eps > 1e-5 else 1e-5
-                    out, mean, variance = tf.cond(
-                        _phase,
-                        lambda: tf.nn.fused_batch_norm(out, gamma, beta, epsilon=fused_eps),
-                        lambda: tf.nn.fused_batch_norm(out, gamma, beta, mean=mean_running, variance=variance_running, epsilon=fused_eps, is_training=False),
-                    )
-
-                    # restore original shape if HW dims was added
-                    if out_shape.ndims == 2:
-                        out = tf.squeeze(out, axis=[1, 2])
-                    elif out_shape.ndims == 3:
-                        out = tf.squeeze(out, axis=2)
-
-                # fallback to naive batch norm
-                else:
-                    mean, variance = tf.nn.moments(out, axes=list(range(len(out.get_shape()) - 1)))
-                    out = tf.cond(
-                        _phase,
-                        lambda: tf.nn.batch_normalization(out, mean, variance, beta, gamma, tf.sg_eps),
-                        lambda: tf.nn.batch_normalization(out, mean_running, variance_running, beta, gamma, tf.sg_eps)
-                    )
-
-                decay = 0.99
-                tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, mean_running.assign(mean_running * decay + mean * (1 - decay)))
-                tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, variance_running.assign(variance_running * decay + variance * (1 - decay)))
+            # end
 
             # apply layer normalization
             if opt.ln:
@@ -331,7 +371,10 @@ def sg_layer_func(func):
 
             # apply activation
             if opt.act:
-                out = getattr(sg_activation, 'sg_' + opt.act.lower())(out)
+                if type(opt.act) is str:
+                    out = getattr(sg_activation, 'sg_' + opt.act.lower())(out)
+                elif callable(opt.act):
+                    out = opt.act(out)
 
             # apply dropout
             if opt.dout:

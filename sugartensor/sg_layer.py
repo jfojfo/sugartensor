@@ -48,7 +48,7 @@ def sg_dense(tensor, opt):
       A `Tensor` with the same type as `tensor`.
     """
     # parameter initialize
-    w = tf.sg_initializer.he_uniform('W', (opt.in_dim, opt.dim),
+    w = getattr(tf.sg_initializer, opt.init)('W', (opt.in_dim, opt.dim), scale=opt.init_scale,
                                      regularizer=opt.regularizer, summary=opt.summary)
     b = tf.sg_initializer.constant('b', opt.dim, summary=opt.summary) if opt.bias else 0
 
@@ -91,7 +91,7 @@ def sg_conv(tensor, opt):
     opt.stride = [1, opt.stride[0], opt.stride[1], 1] if len(opt.stride) == 2 else opt.stride
 
     # parameter initialize
-    w = tf.sg_initializer.he_uniform('W', (opt.size[0], opt.size[1], opt.in_dim, opt.dim),
+    w = getattr(tf.sg_initializer, opt.init)('W', (opt.size[0], opt.size[1], opt.in_dim, opt.dim), scale=opt.init_scale,
                                      regularizer=opt.regularizer, summary=opt.summary)
     b = tf.sg_initializer.constant('b', opt.dim, summary=opt.summary) if opt.bias else 0
 
@@ -260,7 +260,7 @@ def sg_upconv(tensor, opt):
     opt.stride = [1, opt.stride[0], opt.stride[1], 1] if len(opt.stride) == 2 else opt.stride
 
     # parameter tf.sg_initializer
-    w = tf.sg_initializer.he_uniform('W', (opt.size[0], opt.size[1], opt.dim, opt.in_dim),
+    w = getattr(tf.sg_initializer, opt.init)('W', (opt.size[0], opt.size[1], opt.dim, opt.in_dim), scale=opt.init_scale,
                                      regularizer=opt.regularizer, summary=opt.summary)
     b = tf.sg_initializer.constant('b', opt.dim, summary=opt.summary) if opt.bias else 0
 

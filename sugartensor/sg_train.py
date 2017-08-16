@@ -7,7 +7,7 @@ from tqdm import tqdm
 from functools import wraps
 
 
-__author__ = 'namju.kim@kakaobrain.com'
+__author__ = 'buriburisuri@gmail.com'
 
 
 def sg_train(**kwargs):
@@ -167,6 +167,8 @@ def sg_optim(loss, **kwargs):
 
     # default training options
     opt += tf.sg_opt(optim='MaxProp', lr=0.001, beta1=0.9, beta2=0.99, momentum=0., category='')
+    if 'global_step' not in opt:
+        opt.global_step = tf.sg_global_step()
 
     # select optimizer
     if opt.optim == 'MaxProp':
@@ -215,7 +217,7 @@ def sg_optim(loss, **kwargs):
     # gradient update op
     with tf.device('/gpu:0'):
         grad_var = [(g, v) for g, v in zip(gradient, var_list)]
-        grad_op = optim.apply_gradients(grad_var, global_step=tf.sg_global_step())
+        grad_op = optim.apply_gradients(grad_var, global_step=opt.global_step)
 
     # add summary using last tower value
     for g, v in grad_var:
@@ -277,6 +279,9 @@ def sg_train_func(func):
                          eval_metric=[],
                          max_keep=5, keep_interval=1,
                          tqdm=True)
+        # when opt.summary_op is None
+        if 'summary_op' not in opt:
+            opt.summary_op = tf.train.Supervisor.USE_DEFAULT
 
         # training epoch and loss
         epoch, loss = -1, None
@@ -290,8 +295,10 @@ def sg_train_func(func):
             tf.sg_summary_metric(m)
 
         # summary writer
-        log_dir = opt.save_dir + '/run-%02d%02d-%02d%02d' % tuple(time.localtime(time.time()))[1:5]
-        summary_writer = tf.summary.FileWriter(log_dir)
+        if opt.summary_writer is None:
+            log_dir = opt.save_dir + '/run-%02d%02d-%02d%02d' % tuple(time.localtime(time.time()))[1:5]
+            summary_writer = tf.summary.FileWriter(log_dir)
+            opt.summary_writer = summary_writer
 
         # console logging function
         def console_log(sess_):
@@ -304,13 +311,22 @@ def sg_train_func(func):
         sv = tf.train.Supervisor(logdir=opt.save_dir,
                                  saver=saver,
                                  save_model_secs=opt.save_interval,
-                                 summary_writer=summary_writer,
+                                 summary_op=opt.summary_op,
+                                 summary_writer=opt.summary_writer,
                                  save_summaries_secs=opt.log_interval,
                                  global_step=tf.sg_global_step(),
                                  local_init_op=tf.sg_phase().assign(True))
 
+        if opt.config is None:
+            config = tf.ConfigProto()
+            config.allow_soft_placement = True
+            # config.log_device_placement = False
+            config.gpu_options.allow_growth = True
+            # config.gpu_options.per_process_gpu_memory_fraction = 0.333
+            opt.config = config
+
         # create session
-        with sv.managed_session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
+        with sv.managed_session(config=opt.config) as sess:
 
             # console logging loop
             if not opt.tqdm:
@@ -358,8 +374,14 @@ def sg_train_func(func):
                             else:
                                 loss = loss * 0.9 + np.mean(batch_loss) * 0.1
 
+                        if opt.iter_cb:
+                            opt.iter_cb(sess, _, epoch)
+
                     # log epoch information
                     console_log(sess)
+
+                    if opt.epoch_cb:
+                        opt.epoch_cb(sess, epoch)
 
                 # save last version
                 saver.save(sess, opt.save_dir + '/model.ckpt', global_step=sess.run(tf.sg_global_step()))
