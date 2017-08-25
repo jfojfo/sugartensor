@@ -323,7 +323,7 @@ def sg_layer_func(func):
             # by jfo
             if opt.bn:
                 opt += tf.sg_opt(bn_is_training=True, bn_decay=0.999, bn_center=True, bn_scale=False, bn_epsilon=0.001,
-                                 bn_fused=False, bn_scope='BatchNorm')
+                                 bn_fused=False, bn_scope='BatchNorm', bn_reuse=None)
                 if 'bn_updates_collections' not in opt:
                     opt.bn_updates_collections = tf.GraphKeys.UPDATE_OPS
                 out = tf.contrib.layers.batch_norm(out,
@@ -334,6 +334,7 @@ def sg_layer_func(func):
                                                    epsilon=opt.bn_epsilon,
                                                    fused=opt.bn_fused,
                                                    scope=opt.bn_scope,
+                                                   reuse=opt.bn_reuse,
                                                    updates_collections=opt.bn_updates_collections
                                                    )
                 if opt.summary:
